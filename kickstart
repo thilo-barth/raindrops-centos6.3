@@ -1,0 +1,45 @@
+install
+url --url=http://repohost.raindrops.centos.org/centos/6.3/os/x86_64/
+lang us_US.UTF-8
+keyboard de
+network --device eth0 --bootproto dhcp
+rootpw vagrant
+firewall --disabled
+authconfig --enableshadow --passalgo=sha512 --enablefingerprint
+selinux --disabled
+timezone --utc Europe/Berlin
+bootloader --location=mbr --driveorder=sda
+repo --name="CentOS" --baseurl=http://repohost.raindrops.centos.org/centos/6.3/os/x86_64/ --cost=100
+repo --name="EPEL" --baseurl=http://repohost.raindrops.centos.org/epel/6/x86_64/ --cost=100
+zerombr yes
+clearpart --all --initlabel
+part /boot --fstype ext3 --size=250
+part pv.2 --size=5000 --grow
+volgroup VolGroup00 --pesize=32768 pv.2
+logvol / --fstype ext4 --name=LogVol00 --vgname=VolGroup00 --size=1024 --grow
+logvol swap --fstype swap --name=LogVol01 --vgname=VolGroup00 --size=256 --grow --maxsize=512
+reboot
+%packages
+@Base
+@Core
+cloud-init
+puppet
+
+%end
+%post --log=/root/post.log
+echo "NOZEROCONF=yes" >> /etc/sysconfig/network # ohne diese Option wird die Route #169.254.0.0/16 eingetragen
+echo "PERSISTENT_DHCLIENT=yes" >> /etc/sysconfig/network # annehmen des dhcp leases, ohne #wird das dhcp lease nicht angenommen
+sed -i 's/set_hostname/set_hostname\n - update_etc_hosts/' /etc/cloud/cloud.cfg 
+echo "S0:2345:respawn:/sbin/agetty ttyS0 115200 linux" >> /etc/inittab
+sed -i "s/^ACTIVE_CONSOLES=\/dev\/tty\[1-6\]/ACTIVE_CONSOLES=\/dev\/tty1/" /etc/sysconfig/init
+sed -i "/HWADDR/d" /etc/sysconfig/network-scripts/ifcfg-eth* # loeschen der HWADDR
+rm -f /etc/udev/rules.d/70-persistent-net.rules #loeschen der Rule um neue IP/HW zu bekommen.
+for file in /etc/grub.conf /boot/grub/menu.lst /boot/grub/grub.conf; do
+  sed -i "s/^serial.*$/serial –unit=0 –speed=115200/" $file
+  sed -i "s/^terminal.*$/terminal –timeout=10 console serial/" $file
+  sed -i "s/console=ttyS0,115200/console=tty0 console=ttyS0,115200n8/" $file
+done
+useradd ec2-user
+echo -e 'ec2-user\tALL=(ALL)\tNOPASSWD: ALL' >> /etc/sudoers
+echo 'Defaults:ec2-user !requiretty' >> /etc/sudoers #Erlaubnis sudo per ssh zu nutzen , ohne die Option gibt es Probleme beim Vagrant up
+%end
